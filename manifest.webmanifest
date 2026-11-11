@@ -1,0 +1,15 @@
+{
+  "name": "Qualità dell'aria · Verona",
+  "short_name": "Aria Verona",
+  "description": "Qualità dell'aria (PM10 e PM2.5) dalle stazioni ARPAV, con semaforo e andamento.",
+  "lang": "it",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#202020",
+  "theme_color": "#202020",
+  "icons": [
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

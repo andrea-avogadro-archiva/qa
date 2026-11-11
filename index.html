@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Aria Verona</title>
+<meta name="description" content="Qualità dell'aria (PM10 e PM2.5) dalle stazioni ARPAV, con semaforo verde / arancione / rosso e andamento.">
+<meta name="theme-color" content="#6b6b6b">
+<meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Aria Verona">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f3f3f1;
+    --surface: #ffffff;
+    --text: #1c1c1c;
+    --muted: #5c5c5c;
+    --border: #dddcd7;
+    --error: #b3261e;
+    --focus: #1a5fb4;
+
+    /* Colori del semaforo (testo scuro sull'arancione per mantenere il contrasto). */
+    --card-good: #1f7a45;
+    --card-medium: #e08a1e;
+    --card-poor: #c0392b;
+    --card-unknown: #6b6b6b;
+    --on-good: #ffffff;
+    --on-medium: #1f1300;
+    --on-poor: #ffffff;
+    --on-unknown: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141414;
+      --surface: #202020;
+      --text: #f0f0f0;
+      --muted: #a8a8a8;
+      --border: #3a3a3a;
+      --error: #ff9a92;
+      --focus: #8ab4f8;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main {
+    max-width: 480px;
+    margin: 0 auto;
+    padding:
+      max(16px, env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right))
+      max(24px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+    display: grid;
+    gap: 16px;
+  }
+
+  .card {
+    --card: var(--card-unknown);
+    --on-card: var(--on-unknown);
+    background: var(--card);
+    color: var(--on-card);
+    border-radius: 18px;
+    padding: 20px 20px 22px;
+  }
+  .card[data-level="good"]   { --card: var(--card-good);   --on-card: var(--on-good); }
+  .card[data-level="medium"] { --card: var(--card-medium); --on-card: var(--on-medium); }
+  .card[data-level="poor"]   { --card: var(--card-poor);   --on-card: var(--on-poor); }
+  .card h1 { margin: 0; font-size: 15px; font-weight: 600; opacity: .92; }
+  .card .status { margin: 4px 0 0; font-size: 34px; font-weight: 700; line-height: 1.15; }
+  .card .trend { margin: 6px 0 0; font-size: 15px; }
+  .card .trend:empty { display: none; }
+
+  .station {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px 16px 4px;
+  }
+  .station h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+  .station ul { list-style: none; margin: 0; padding: 0; }
+  .row {
+    display: grid;
+    grid-template-columns: 1.7em 1fr auto;
+    column-gap: 8px;
+    align-items: baseline;
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+  }
+  .row .emoji { font-size: 18px; }
+  .row .name { font-weight: 600; }
+  .row .sub { grid-column: 2; font-size: 13px; color: var(--muted); }
+  .row .value { grid-row: 1; grid-column: 3; text-align: right; font-variant-numeric: tabular-nums; }
+  .row .value small { color: var(--muted); font-size: 12px; }
+  .row .arrow { display: inline-block; min-width: 1em; text-align: center; font-weight: 700; }
+
+  .meta { margin: 0; font-size: 13px; color: var(--muted); }
+  .meta:empty { display: none; }
+  .meta.error { color: var(--error); }
+
+  button {
+    font: inherit;
+    font-weight: 600;
+    min-height: 48px;
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+  }
+  button:disabled { opacity: .6; cursor: default; }
+  button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  noscript { display: block; padding: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <section class="card" id="card" data-level="unknown" aria-live="polite" aria-busy="true">
+    <h1 id="title">Qualità dell'aria</h1>
+    <p class="status" id="status">Caricamento…</p>
+    <p class="trend" id="trend"></p>
+  </section>
+
+  <div id="details" style="display:contents"></div>
+
+  <p class="meta" id="updated"></p>
+  <p class="meta error" id="error" role="alert"></p>
+  <button type="button" id="refresh">Aggiorna ora</button>
+  <noscript>Questa pagina ha bisogno di JavaScript per mostrare i dati.</noscript>
+</main>
+
+<script src="aq-core.js"></script>
+<script src="config.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  const CACHE_KEY = "aria-verona-cache-v1";
+  const RESUME_MIN_AGE_MS = 10 * 60 * 1000; // al ritorno nell'app si ricarica se i dati sono più vecchi
+  const UNIT = "µg/m³";
+  const LEVEL_KEYS = ["good", "medium", "poor"];
+  const LEVEL_LABELS = ["Buona", "Intermedia", "Scadente"];
+  const LEVEL_EMOJI = ["🟢", "🟠", "🔴"];
+  const TREND_WORDS = {
+    [AQ.Trend.UP]: "in aumento",
+    [AQ.Trend.FLAT]: "stabile",
+    [AQ.Trend.DOWN]: "in calo",
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const card = $("card");
+  const refreshButton = $("refresh");
+
+  let config = null;
+  let configError = null;
+  try {
+    config = AQ.parseConfig(AIR_QUALITY_CONFIG);
+  } catch (error) {
+    configError = error.message;
+  }
+
+  const state = {
+    stations: {},        // ultimi dati validi per codice stazione (anche dalla cache)
+    errors: [],          // errori dell'ultimo aggiornamento
+    updatedAt: null,     // Date dell'ultimo aggiornamento riuscito
+    lastAttempt: 0,
+    loading: false,
+  };
+
+  // -- Cache locale (opzionale: se non è disponibile la pagina funziona lo stesso) ---------
+  function isValidStationData(data) {
+    return Boolean(
+      data && typeof data.name === "string" && data.series && typeof data.series === "object" &&
+      Object.values(data.series).every((list) => Array.isArray(list) && list.every((v) =>
+        v && typeof v.day === "string" && Number.isFinite(v.ord) && Number.isFinite(v.value)))
+    );
+  }
+
+  function loadCache() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+      if (!saved || typeof saved.stations !== "object") return;
+      for (const [code, data] of Object.entries(saved.stations)) {
+        if (isValidStationData(data)) state.stations[code] = data;
+      }
+      const when = new Date(saved.updatedAt);
+      if (!Number.isNaN(when.getTime())) state.updatedAt = when;
+    } catch {
+      /* storage non disponibile o dati corrotti: si parte senza cache */
+    }
+  }
+
+  function saveCache() {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({
+        stations: state.stations,
+        updatedAt: state.updatedAt.toISOString(),
+      }));
+    } catch {
+      /* storage non disponibile: pazienza */
+    }
+  }
+
+  // -- Download dei dati -------------------------------------------------------------------
+  async function fetchStation(code) {
+    const url = new URL(config.apiUrl);
+    url.searchParams.set("codseqst", String(code));
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), config.requestTimeoutSeconds * 1000);
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return { code, data: AQ.parseStationPayload(code, await response.json()) };
+    } catch (error) {
+      const reason = error.name === "AbortError" ? "tempo scaduto" : error.message;
+      return { code, error: `stazione ${code}: ${reason}` };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function refresh() {
+    if (state.loading || !config) return; // un aggiornamento è già in corso
+    state.loading = true;
+    state.lastAttempt = Date.now();
+    render();
+
+    const outcomes = await Promise.all([...new Set(config.stations)].map(fetchStation));
+    const errors = [];
+    let anyOk = false;
+    for (const outcome of outcomes) {
+      if (outcome.error) {
+        errors.push(outcome.error); // si tengono gli ultimi dati validi di quella stazione
+      } else {
+        state.stations[outcome.code] = outcome.data;
+        anyOk = true;
+      }
+    }
+    state.errors = errors;
+    if (anyOk) {
+      state.updatedAt = new Date();
+      saveCache();
+    }
+    state.loading = false;
+    render();
+  }
+
+  // -- Disegno -----------------------------------------------------------------------------
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  const formatValue = (value) =>
+    value.toLocaleString("it-IT", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const formatDayMonth = (isoDay) => `${isoDay.slice(8, 10)}/${isoDay.slice(5, 7)}`;
+  const formatTime = (date) =>
+    date.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+
+  function formatUpdated(date) {
+    const sameDay = date.toDateString() === new Date().toDateString();
+    return sameDay
+      ? `alle ${formatTime(date)}`
+      : `il ${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")} alle ${formatTime(date)}`;
+  }
+
+  /** Un blocco per stazione, una riga per inquinante (come format_details in weather_tray.py). */
+  function buildDetails(quality) {
+    const fragment = document.createDocumentFragment();
+    let section = null;
+    let list = null;
+    let station = null;
+    for (const r of quality.results) {
+      if (r.station !== station) {
+        station = r.station;
+        section = el("section", "station");
+        section.append(el("h2", "", station));
+        list = el("ul");
+        section.append(list);
+        fragment.append(section);
+      }
+      const row = el("li", "row");
+      row.append(el("span", "emoji", LEVEL_EMOJI[r.level]));
+      row.append(el("span", "name", r.pollutant));
+
+      const value = el("span", "value", `${formatValue(r.latest.value)} `);
+      value.append(el("small", "", UNIT));
+      if (r.trend) {
+        const arrow = el("span", "arrow", r.trend);
+        arrow.setAttribute("role", "img");
+        arrow.setAttribute("aria-label", TREND_WORDS[r.trend]);
+        value.append(" ", arrow);
+      }
+      row.append(value);
+      row.append(el("span", "sub", `${r.daysOver}/${r.window.length} giorni sopra ${r.threshold}`));
+      list.append(row);
+    }
+    return fragment;
+  }
+
+  function currentQuality() {
+    if (!config || Object.keys(state.stations).length === 0) return null;
+    return AQ.evaluate(state.stations, config);
+  }
+
+  function render() {
+    const area = config ? config.areaName : "Aria";
+    const quality = currentQuality();
+    const level = quality ? quality.level : null;
+
+    document.title = `Aria ${area}`;
+    $("title").textContent = `Qualità dell'aria · ${area}`;
+
+    if (level === null) {
+      card.dataset.level = "unknown";
+      $("status").textContent = state.loading ? "Caricamento…" : "Dati non disponibili";
+      $("trend").textContent = "";
+      $("details").replaceChildren();
+    } else {
+      card.dataset.level = LEVEL_KEYS[level];
+      $("status").textContent = LEVEL_LABELS[level];
+      $("trend").textContent = quality.trend
+        ? `Andamento (${quality.trendWindowDays} gg): ${quality.trend} ${TREND_WORDS[quality.trend]}`
+        : "";
+      $("details").replaceChildren(buildDetails(quality));
+    }
+    card.setAttribute("aria-busy", String(state.loading));
+
+    // Il colore della barra del browser segue il semaforo.
+    document.querySelector('meta[name="theme-color"]').content =
+      getComputedStyle(card).backgroundColor;
+
+    let updated = "";
+    if (state.updatedAt) {
+      updated = `Aggiornato ${formatUpdated(state.updatedAt)}`;
+      if (quality && quality.latestDay) updated += ` · ultimo dato del ${formatDayMonth(quality.latestDay)}`;
+    } else if (state.loading) {
+      updated = "Aggiornamento in corso…";
+    }
+    $("updated").textContent = updated;
+
+    const errors = configError ? [`configurazione non valida: ${configError}`] : state.errors;
+    $("error").textContent = errors.length ? `Errore: ${errors.join("; ")}` : "";
+
+    refreshButton.disabled = state.loading || !config;
+    refreshButton.textContent = state.loading ? "Aggiornamento in corso…" : "Aggiorna ora";
+  }
+
+  // -- Avvio -------------------------------------------------------------------------------
+  refreshButton.addEventListener("click", refresh);
+
+  function refreshIfStale() {
+    if (!document.hidden && Date.now() - state.lastAttempt > RESUME_MIN_AGE_MS) refresh();
+  }
+  document.addEventListener("visibilitychange", refreshIfStale);
+  window.addEventListener("pageshow", (event) => { if (event.persisted) refreshIfStale(); });
+
+  if (config) {
+    loadCache();
+    setInterval(refresh, config.refreshMinutes * 60 * 1000);
+  }
+  render();
+  refresh();
+})();
+</script>
+</body>
+</html>
